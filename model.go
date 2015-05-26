@@ -8,7 +8,7 @@ import (
 	"unicode"
 )
 
-type Field struct {
+type toyField struct {
 	Name          string
 	Length        int
 	AutoIncrement bool
@@ -21,8 +21,8 @@ type Field struct {
 	Tags          reflect.StructTag
 }
 
-type Model struct {
-	Fields    []*Field
+type toyModel struct {
+	Fields    []*toyField
 	TableName string
 }
 
@@ -91,38 +91,39 @@ func getPrimaryKey(tags reflect.StructTag) (result bool) {
 	return false
 }
 
-func generateField(structField reflect.StructField) (field *Field) {
+func generateField(structField reflect.StructField) *toyField {
 	tags := structField.Tag
 
-	field.Tags = tags
-	field.PrimaryKey = getPrimaryKey(tags)
-	field.Name = getFieldName(tags, structField.Name)
-	field.Length = getFieldLength(tags)
-	field.AutoIncrement = getAutoIncrement(tags)
-	field.Nullable = getNullable(tags)
-	field.Type = getType(tags, structField.Type)
-	field.Default = getDefault(tags, field.Type)
+	f := new(toyField)
+	f.Tags = tags
+	f.PrimaryKey = getPrimaryKey(tags)
+	f.Name = getFieldName(tags, structField.Name)
+	f.Length = getFieldLength(tags)
+	f.AutoIncrement = getAutoIncrement(tags)
+	f.Nullable = getNullable(tags)
+	f.Type = getType(tags, structField.Type)
+	f.Default = getDefault(tags, f.Type)
 
-	return field
+	return f
 }
 
-func getValue(field *Field, v reflect.Value) (value interface{}, err error) {
-	if v == reflect.Zero(field.Type) {
-		if field.Default == reflect.Zero(field.Type) {
-			if !field.Nullable {
-				return nil, &Error{fmt.Sprintf("%s could not be nil", field.Name)}
+func getValue(f *toyField, v reflect.Value) (value interface{}, err error) {
+	if v == reflect.Zero(f.Type) {
+		if f.Default == reflect.Zero(f.Type) {
+			if !f.Nullable {
+				return nil, &Error{fmt.Sprintf("%s could not be nil", f.Name)}
 			}
-			return field.Default, nil
+			return f.Default, nil
 		}
 	}
 	return v, nil
 }
 
-func getTableName(model *Model) (name string) {
-	for _, field := range model.Fields {
-		if field.PrimaryKey {
-			if field.Tags.Get(FIELD_KEY_TABLE_NAME) != "" {
-				return field.Tags.Get(FIELD_KEY_TABLE_NAME)
+func getTableName(model *toyModel) (name string) {
+	for _, f := range model.Fields {
+		if f.PrimaryKey {
+			if f.Tags.Get(FIELD_KEY_TABLE_NAME) != "" {
+				return f.Tags.Get(FIELD_KEY_TABLE_NAME)
 			}
 		}
 	}
@@ -136,31 +137,31 @@ func getTableName(model *Model) (name string) {
 	return name
 }
 
-func getModel(entity interface{}) (model *Model, err error) {
+func getToyModel(entity interface{}) (model *toyModel, err error) {
 	st := reflect.TypeOf(entity)
 
 	fieldNum := st.NumField()
 
-	var fields []*Field
+	var fields []*toyField
 	for i := 0; i < fieldNum; i++ {
-		field := generateField(st.Field(i))
+		f := generateField(st.Field(i))
 
 		value := reflect.ValueOf(entity)
-		field.Value, err = getValue(field, reflect.Indirect(value).Field(i))
+		f.Value, err = getValue(f, reflect.Indirect(value).Field(i))
 		if err != nil {
 			return nil, err
 		}
-		fields = append(fields, field)
+		fields = append(fields, f)
 	}
 
-	model = &Model{fields, st.Name()}
+	model = &toyModel{fields, st.Name()}
 	model.TableName = getTableName(model)
 
 	return model, err
 }
 
 func (s *Session) Save(entity interface{}) (num int64, err error) {
-	model, err := getModel(entity)
+	model, err := getToyModel(entity)
 	if err != nil {
 		return 0, err
 	}
